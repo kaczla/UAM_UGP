@@ -10,3 +10,4 @@ datasets
 evaluate
 sacrebleu
 scikit-learn
+peft>=0.13,<0.14

@@ -26,9 +26,11 @@ from typing import Optional
 import datasets
 import evaluate
 import numpy as np
+import torch
 from datasets import load_dataset
 
 import transformers
+from peft import LoraConfig, get_peft_model, TaskType
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
@@ -236,18 +238,54 @@ class ModelArguments:
     )
 
 
+@dataclass
+class LoraArguments:
+    use_lora: bool = field(default=False, metadata={"help": "Enable LoRA"})
+    lora_r: int = field(default=8, metadata={"help": "Lora attention dimension"})
+    lora_alpha: int = field(default=32, metadata={"help": "Lora alpha"})
+    lora_dropout: float = field(default=0.1, metadata={"help": "Lora dropout"})
+    use_all_linear_layers: bool = field(default=False, metadata={"help": "Apply LoRA for all linear layers"})
+    lora_regex_pattern: str | None = field(
+        default=None,
+        metadata={
+            "help": "Regex expression of the module names to replace with Lora,"
+            " e.g. '.*decoder.*(SelfAttention|EncDecAttention).*(q|v)$'"
+        },
+    )
+
+
+def find_all_linear_names(model):
+    lora_module_names = set()
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.Linear):
+            names = name.split('.')
+            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
+
+    if 'lm_head' in lora_module_names:
+        lora_module_names.remove('lm_head')
+    return list(lora_module_names)
+
+
+def print_trained_parameters(model):
+    logger.info(f"Training parameters: {model.__class__.__name__}")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            logger.info(name)
+    logger.info("---")
+
+
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments, LoraArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, training_args, lora_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, training_args, lora_args = parser.parse_args_into_dataclasses()
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -434,6 +472,20 @@ def main():
         trust_remote_code=model_args.trust_remote_code,
         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
+
+    if lora_args.use_lora:
+        logger.info("Using LoRA")
+        peft_config = LoraConfig(
+            task_type=TaskType.SEQ_CLS,
+            inference_mode=False,
+            r=lora_args.lora_r,
+            lora_alpha=lora_args.lora_alpha,
+            lora_dropout=lora_args.lora_dropout,
+            target_modules=lora_args.lora_regex_pattern if lora_args.lora_regex_pattern else find_all_linear_names(model) if lora_args.use_all_linear_layers else None,
+        )
+        model = get_peft_model(model, peft_config)
+        model.print_trainable_parameters()
+        print_trained_parameters(model)
 
     if 'gpt2' in tokenizer.name_or_path and tokenizer.pad_token is None:
         logger.info(f'Set PAD token to EOS: {tokenizer.eos_token}')
