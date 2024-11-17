@@ -10,7 +10,6 @@ python run_translation.py \
   --model_name_or_path "t5-small" \
   --train_file data/s2s-train-5k.json \
   --validation_file data/s2s-valid-5k.json \
-  --test_file data/s2s-test-5k.json \
   --per_device_train_batch_size 8 \
   --per_device_eval_batch_size 8 \
   --source_lang "text" \
@@ -21,8 +20,17 @@ python run_translation.py \
   --generation_max_length 128 \
   --do_train \
   --do_eval \
-  --do_predict \
   --predict_with_generate \
   --num_train_epochs 1 \
+  --save_strategy steps \
+  --save_steps 1000 \
+  --save_total_limit 5 \
+  --logging_strategy steps \
+  --logging_steps 50 \
+  --eval_steps 1000 \
+  --evaluation_strategy steps \
+  --metric_for_best_model 'accuracy' \
+  --greater_is_better 'True' \
+  --load_best_model_at_end 'True' \
   --report_to=none \
   --output_dir out/imdb-5k/t5_v1_0

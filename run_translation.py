@@ -27,6 +27,7 @@ from typing import Optional
 import datasets
 import evaluate
 import numpy as np
+import torch
 from datasets import load_dataset
 
 import transformers
@@ -112,6 +113,10 @@ class ModelArguments:
                 " code, as it will execute code present on the Hub on your local machine."
             )
         },
+    )
+    freeze_weights: bool = field(
+        default=False,
+        metadata={"help": "Freeze encoder weights"},
     )
 
 
@@ -263,6 +268,11 @@ class DataTrainingArguments:
             self.val_max_target_length = self.max_target_length
 
 
+def freeze_model_weights(model: torch.nn.Module) -> None:
+    for param in model.parameters():
+        param.requires_grad = False
+
+
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
@@ -406,6 +416,16 @@ def main():
         token=model_args.token,
         trust_remote_code=model_args.trust_remote_code,
     )
+
+    if model_args.freeze_weights:
+        logger.info("Freezing encoder weights")
+
+        # Freeze whole encoder
+        # freeze_model_weights(model.encoder)
+
+        # Freeze first 4 layers in encoder
+        for i in range(4):
+            freeze_model_weights(model.encoder.block[i])
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
@@ -575,7 +595,7 @@ def main():
 
     # Metric
     metric = evaluate.load("sacrebleu", cache_dir=model_args.cache_dir)
-    metric_accuracy = evaluate.load("accuracy")
+    metric_accuracy = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
 
     def postprocess_text(preds, labels):
         preds = [pred.strip() for pred in preds]

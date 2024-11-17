@@ -46,7 +46,22 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
+from custom_model import (
+    GPT2ForSequenceClassificationCustom,
+    GPT2ForSequenceClassificationCustomSimple,
+    RobertaForSequenceClassificationCustom,
+    RobertaForSequenceClassificationCustomAlternative,
+    RobertaForSequenceClassificationCustomSimple,
+)
 from save_on_end_epoch import SaveOnEndEpochTrainerCallback
+
+MODEL_NAME_TO_CLASS = {
+    "roberta_simple": RobertaForSequenceClassificationCustomSimple,
+    "roberta_hidden": RobertaForSequenceClassificationCustom,
+    "roberta_hidden_v2": RobertaForSequenceClassificationCustomAlternative,
+    "gpt2_simple": GPT2ForSequenceClassificationCustomSimple,
+    "gpt2_hidden": GPT2ForSequenceClassificationCustom,
+}
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.46.0")
@@ -211,6 +226,13 @@ class ModelArguments:
     ignore_mismatched_sizes: bool = field(
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
+    )
+    custom_model: str = field(
+        default=None,
+        metadata={
+            "help": "Use custom implementation from available list",
+            "choices": list(MODEL_NAME_TO_CLASS.keys()),
+        },
     )
 
 
@@ -384,7 +406,25 @@ def main():
         token=model_args.token,
         trust_remote_code=model_args.trust_remote_code,
     )
-    model = AutoModelForSequenceClassification.from_pretrained(
+    custom_model = model_args.custom_model
+    if custom_model is not None:
+        # Check model and implementation is the same
+        if 'roberta' in custom_model and 'roberta' not in model_args.model_name_or_path:
+            raise RuntimeError('Model and custom implementation should be the same type: RoBERTa')
+        elif 'gpt2' in custom_model and 'gpt2' not in model_args.model_name_or_path:
+            raise RuntimeError('Model and custom implementation should be the same type: GPT-2')
+
+        # Set custom configuration in model configuration
+        config.use_hidden_states = 'hidden' in custom_model
+        logger.info(f'Using hidden states in model: {config.use_hidden_states}')
+
+        # Get class to initialize model
+        model_cls = MODEL_NAME_TO_CLASS[custom_model]
+    else:
+        model_cls = AutoModelForSequenceClassification
+
+    logger.info(f'Using implementation from class: {model_cls.__name__}')
+    model = model_cls.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,

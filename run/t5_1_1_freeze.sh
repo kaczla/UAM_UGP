@@ -8,6 +8,7 @@ rm -rf out/imdb-5k/t5_v1_1
 python run_translation.py \
   --cache_dir .cache_training \
   --model_name_or_path "google/t5-v1_1-small" \
+  --freeze_weights \
   --train_file data/s2s-train-5k.json \
   --validation_file data/s2s-valid-5k.json \
   --per_device_train_batch_size 8 \
@@ -33,4 +34,4 @@ python run_translation.py \
   --greater_is_better 'True' \
   --load_best_model_at_end 'True' \
   --report_to=none \
-  --output_dir out/imdb-5k/t5_v1_1
+  --output_dir out/imdb-5k/t5_v1_1_freeze

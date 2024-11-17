@@ -3,11 +3,12 @@
 export HF_HOME=.cache/hf
 export TOKENIZERS_PARALLELISM='true'
 
-rm -rf out/imdb-5k/gpt2
+rm -rf out/imdb-5k/roberta
 
 python run_glue.py \
   --cache_dir .cache_training \
-  --model_name_or_path gpt2 \
+  --model_name_or_path roberta-base \
+  --custom_model roberta_hidden \
   --train_file data/train-5k.json  \
   --validation_file data/valid-5k.json \
   --per_device_train_batch_size 24 \
@@ -28,4 +29,4 @@ python run_glue.py \
   --greater_is_better 'True' \
   --load_best_model_at_end 'True' \
   --report_to=none \
-  --output_dir out/imdb-5k/gpt2
+  --output_dir out/imdb-5k/roberta_hidden
