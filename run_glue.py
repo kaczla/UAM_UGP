@@ -46,6 +46,7 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
+from save_on_end_epoch import SaveOnEndEpochTrainerCallback
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.46.0")
@@ -394,6 +395,11 @@ def main():
         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
 
+    if 'gpt2' in tokenizer.name_or_path and tokenizer.pad_token is None:
+        logger.info(f'Set PAD token to EOS: {tokenizer.eos_token}')
+        tokenizer._pad_token = tokenizer.eos_token
+        model.config.pad_token_id = model.config.eos_token_id
+
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
         sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
@@ -533,6 +539,7 @@ def main():
         compute_metrics=compute_metrics,
         processing_class=tokenizer,
         data_collator=data_collator,
+        callbacks=[SaveOnEndEpochTrainerCallback()]
     )
 
     # Training

@@ -50,6 +50,7 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
+from save_on_end_epoch import SaveOnEndEpochTrainerCallback
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.46.0")
@@ -58,9 +59,13 @@ require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/tran
 
 logger = logging.getLogger(__name__)
 
+# Disable: "Trainer.tokenizer is now deprecated. You should use Trainer.processing_class instead." error in transformers 4.46.2
+logging.getLogger('transformers.trainer').setLevel(logging.ERROR)
+
 # A list of all multilingual tokenizer which require src_lang and tgt_lang attributes.
 MULTILINGUAL_TOKENIZERS = [MBartTokenizer, MBartTokenizerFast, MBart50Tokenizer, MBart50TokenizerFast, M2M100Tokenizer]
 
+MAP_CLASSIFICATION_LABEL = {'positive': 1, 'negative': 0}
 
 @dataclass
 class ModelArguments:
@@ -419,6 +424,13 @@ def main():
         raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
 
     prefix = data_args.source_prefix if data_args.source_prefix is not None else ""
+    if 'classification' not in prefix:
+        raise RuntimeError('Not found "classification" prefix!')
+    prefix = prefix.strip()
+    if not prefix.endswith(':'):
+        prefix += ':'
+    prefix += ' '
+    logger.info(f'Using translation prefix: "{prefix!r}"')
 
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
@@ -440,8 +452,8 @@ def main():
             "--target_lang arguments."
         )
 
-        tokenizer.src_lang = data_args.source_lang
-        tokenizer.tgt_lang = data_args.target_lang
+        tokenizer.src_lang = "text"
+        tokenizer.tgt_lang = "label"
 
         # For multilingual translation models like mBART-50 and M2M100 we need to force the target language token
         # as the first generated token. We ask the user to explicitly provide this as --forced_bos_token argument.
@@ -478,8 +490,8 @@ def main():
         )
 
     def preprocess_function(examples):
-        inputs = [ex[source_lang] for ex in examples["translation"]]
-        targets = [ex[target_lang] for ex in examples["translation"]]
+        inputs = [ex for ex in examples[source_lang]]
+        targets = [ex for ex in examples[target_lang]]
         inputs = [prefix + inp for inp in inputs]
         model_inputs = tokenizer(inputs, max_length=data_args.max_source_length, padding=padding, truncation=True)
 
@@ -563,6 +575,7 @@ def main():
 
     # Metric
     metric = evaluate.load("sacrebleu", cache_dir=model_args.cache_dir)
+    metric_accuracy = evaluate.load("accuracy")
 
     def postprocess_text(preds, labels):
         preds = [pred.strip() for pred in preds]
@@ -582,9 +595,12 @@ def main():
 
         # Some simple post-processing
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
+        decoded_preds_accuracy = [MAP_CLASSIFICATION_LABEL.get(decoded_pred, -1) for decoded_pred in decoded_preds]
+        decoded_labels_accuracy = [MAP_CLASSIFICATION_LABEL.get(decoded_label[0], -1) for decoded_label in decoded_labels]
 
         result = metric.compute(predictions=decoded_preds, references=decoded_labels)
-        result = {"bleu": result["score"]}
+        result_accuracy = metric_accuracy.compute(predictions=decoded_preds_accuracy, references=decoded_labels_accuracy)
+        result = {"bleu": result["score"], "accuracy": result_accuracy["accuracy"]}
 
         prediction_lens = [np.count_nonzero(pred != tokenizer.pad_token_id) for pred in preds]
         result["gen_len"] = np.mean(prediction_lens)
@@ -600,6 +616,7 @@ def main():
         processing_class=tokenizer,
         data_collator=data_collator,
         compute_metrics=compute_metrics if training_args.predict_with_generate else None,
+        callbacks=[SaveOnEndEpochTrainerCallback()],
     )
 
     # Training
