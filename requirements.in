@@ -1,0 +1,12 @@
+# uv pip compile -U requirements.in -o requirements.txt
+# uv pip install -r requirements.txt
+# uv pip compile -U requirements.in -o requirements.txt && uv pip install -r requirements.txt
+transformers[torch]==4.46.2
+tokenizers
+sentencepiece
+protobuf
+tiktoken
+datasets
+evaluate
+sacrebleu
+scikit-learn
